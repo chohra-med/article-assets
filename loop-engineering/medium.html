@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Medium paste page — Loop engineering (engineers cut)</title>
+<style>
+  body { max-width: 740px; margin: 0 auto 60px; font-family: Georgia, serif; font-size: 19px; line-height: 1.6; color: #191919; padding: 0 20px; }
+  .bar { position: sticky; top: 0; background: #0E0E10; color: #FAFAF8; font-family: -apple-system, sans-serif; font-size: 14px; padding: 12px 16px; margin: 0 -20px 32px; display: flex; align-items: center; gap: 14px; }
+  .bar button { background: #3BA9AE; color: #fff; border: 0; border-radius: 6px; padding: 10px 18px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .bar button:active { background: #1F6F73; }
+  .bar span { opacity: 0.85; }
+  h1 { font-size: 40px; line-height: 1.15; } h2 { font-size: 28px; margin-top: 1.6em; }
+  img { max-width: 100%; height: auto; }
+  li { margin-bottom: 0.4em; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <button id="copyBtn" onclick="copyArticle()">Copy article</button>
+  <span id="status">→ then paste into medium.com/new-story · add tags: AI, Artificial Intelligence, Programming, Productivity, Software Engineering · publish</span>
+</div>
+
+<div id="article">
+<h1>Loop engineering: the four parts of an AI loop, and the one everyone skips</h1>
+
+<p>The ladder is clean once you see it. Prompt engineering was tuning the words. Context engineering was getting the right things into the window at the moment the model acts. Harness engineering, the term Addy Osmani has been mapping out loud, is the scaffolding around the model: your tools, your rules file, your sandboxes. A decent model with a great harness beats a great model with a bad one.</p>
+
+<p>Loop engineering is the floor above. Same harness, but now it runs on a timer, spawns helpers, and feeds itself. You stop being the thing connecting every step. Boris Cherny reportedly described his job at this point as writing loops that prompt Claude and decide what to do next, rather than prompting Claude himself. Treat the specifics as secondhand, the direction is real.</p>
+
+<img src="https://substackcdn.com/image/fetch/$s_!SfoM!,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fdc07d7ac-3f74-4277-9648-9dac07a2a069_1800x1311.png" alt="The ladder: prompt, context, harness, loop">
+
+<p>This article is the engineer's version: what a loop is made of, how the two big tools converged on the same shape, and the part most people build last when it should be first.</p>
+
+<h2>A loop has four parts</h2>
+
+<p>A loop is the thing that runs your work without you re-prompting it each time:</p>
+
+<ol>
+<li><strong>Memory</strong> it reads before it acts and writes after.</li>
+<li><strong>Rules</strong> it cannot break.</li>
+<li><strong>A verifier</strong> that confirms the output before it counts.</li>
+<li><strong>A schedule</strong> that triggers the cycle.</li>
+</ol>
+
+<p>Memory, rules, verify, schedule. Hold those four.</p>
+
+<img src="https://substackcdn.com/image/fetch/$s_!4qao!,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F3e98eef0-0610-474c-8f5a-1f2ff8610961_1900x1643.png" alt="The four parts of a loop, with verify highlighted">
+
+<h2>The surprise: the tool stopped mattering</h2>
+
+<p>A year ago a loop meant a pile of bash you owned forever. Now the pieces ship inside the products, and they are the same pieces in both:</p>
+
+<ul>
+<li><strong>Schedule</strong>: Codex calls it an Automations tab. Claude Code gets there with /loop, cron, hooks, or GitHub Actions.</li>
+<li><strong>Isolation</strong>: git worktrees so two agents in parallel do not overwrite each other.</li>
+<li><strong>Knowledge</strong>: Skills, literally the same folder-with-a-SKILL.md format in both.</li>
+<li><strong>Reach</strong>: Connectors, both built on MCP.</li>
+<li><strong>Separation of concerns</strong>: sub-agents, so the agent that has the idea is not the agent that checks it.</li>
+</ul>
+
+<p>Underneath all of it: memory on disk. A markdown file, a board, anything outside the single conversation. The model forgets between runs. The agent forgets, the repo does not. Once you see the shape is identical across tools, you stop picking a tool and start designing a loop that survives whichever one you are sitting in.</p>
+
+<h2>My actual setup, and the gap in it</h2>
+
+<p>I have run a proto-loop for months. Three indexing layers per project:</p>
+
+<ul>
+<li>a <strong>curated memory bank</strong>, the durable hand-checked truth I refuse to re-explain</li>
+<li>a <strong>structural index</strong> on top, the graph of what imports what, so the agent navigates instead of guessing</li>
+<li>an automatic <strong>temporal layer</strong> for the fuzzy "what happened across sessions" recall</li>
+</ul>
+
+<img src="https://raw.githubusercontent.com/chohra-med/article-assets/main/loop-engineering/loop-receipts-by-the-numbers.png" alt="The memory bank, by the numbers">
+
+<p>On top of those, background agents on a schedule. So when I lined my setup up against the four parts: memory, yes. Rules, yes. Schedule, yes. That is three.</p>
+
+<p>The fourth is verify, and I did not have it. I never built a separate checker. The loop produced work and trusted its own work. No second model, no sub-agent whose only job is to read the output and return true or false. The agent that does the work also decides the work is fine, which is the exact conflict of interest you would flag in any human process.</p>
+
+<p>Memory plus rules plus schedule gives you an agent that runs a lot. It does not give you an agent you can trust to run unattended. Without verification you do not have a loop, you have a very confident intern with a cron job.</p>
+
+<h2>How to build each part</h2>
+
+<p><strong>Memory</strong>: a directory the loop reads at the start of a run and appends to at the end. One fact per file beats one giant file, small files you can delete when wrong, big files rot and fight each other.</p>
+
+<p><strong>Rules</strong>: encode constraints once, and ratchet them, every mistake becomes a new rule so it cannot recur. Rules only tighten.</p>
+
+<p><strong>Verify</strong>: a sub-agent or second model whose only output is true/false against a defined end-state. Give it the goal's acceptance criteria, not the task. This is the part that turns "it ran" into "it worked." Build it first.</p>
+
+<p><strong>Schedule</strong>: the trigger. /loop, a cron line, a background agent that wakes, finds the work, and starts the cycle. This is what removes you from the middle.</p>
+
+<h2>The takeaway</h2>
+
+<p>The edge moved out of the weights and into the structure around them, and it kept climbing: prompt, context, harness, loop. The verifier is the floor most people skip because the loop appears to work without it. It does not work, it just runs. If you are running any background agent today, ask the one question that matters: who checks the output? If it is the same agent that wrote it, you have a head start, not a loop.</p>
+
+<p>I packaged the skeleton I am using to close my own gap, the memory bank, the rules file, a goal with a verifiable end-state, the checker sub-agent, the schedule, and guardrails. It ships with the deeper write-up on the <a href="https://codemeetai.substack.com/p/loop-engineering-what-happened-when?utm_source=medium&utm_medium=social&utm_campaign=loop">Code Meet AI newsletter</a>.</p>
+</div>
+
+<script>
+async function copyArticle() {
+  const el = document.getElementById('article');
+  const html = el.innerHTML;
+  const text = el.innerText;
+  try {
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/html': new Blob([html], {type: 'text/html'}),
+      'text/plain': new Blob([text], {type: 'text/plain'})
+    })]);
+    setStatus('✓ Copied — paste into the Medium editor now');
+  } catch (e) {
+    // fallback: select the article so Cmd+C works
+    const r = document.createRange(); r.selectNodeContents(el);
+    const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+    setStatus('Selected — press Cmd+C, then paste into Medium');
+  }
+}
+function setStatus(m) { document.getElementById('status').textContent = m; }
+</script>
+</body>
+</html>
